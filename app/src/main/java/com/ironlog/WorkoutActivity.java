@@ -2,6 +2,10 @@ package com.ironlog;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
@@ -45,6 +49,7 @@ public class WorkoutActivity extends AppCompatActivity {
 
     private Store store;
     private Models.Day day;
+    private int dayIndex;
     private LinearLayout content, restBar;
     private TextView restTime;
 
@@ -52,12 +57,29 @@ public class WorkoutActivity extends AppCompatActivity {
     private Runnable ticker;
     private int remaining, total;
     private boolean paused;
+    private long restEndTimeMs = 0;
 
     private final List<ExState> states = new ArrayList<>();
+
+    private final BroadcastReceiver timerDoneReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context ctx, Intent intent) {
+            if (TimerService.ACTION_DONE.equals(intent.getAction())) {
+                if (ticker != null) handler.removeCallbacks(ticker);
+                remaining = 0;
+                restEndTimeMs = 0;
+                paintRest();
+                beep();
+                handler.postDelayed(() -> restBar.setVisibility(View.GONE), 1500);
+            }
+        }
+    };
 
     private static class SetRow {
         EditText w, reps;
         Button check;
+        TextView no;
+        GradientDrawable noDefaultBg;
         boolean done;
     }
 
@@ -72,15 +94,15 @@ public class WorkoutActivity extends AppCompatActivity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         store = new Store(this);
-        int di = getIntent().getIntExtra("day", 0);
-        java.util.List<Models.Program> progs = store.getPrograms();
+        dayIndex = getIntent().getIntExtra("day", 0);
+        List<Models.Program> progs = store.getPrograms();
         Models.Program prog = progs.get(Math.min(store.activeProgram(), progs.size() - 1));
-        di = Math.max(0, Math.min(di, prog.days.size() - 1));
-        day = prog.days.get(di);
+        dayIndex = Math.max(0, Math.min(dayIndex, prog.days.size() - 1));
+        day = prog.days.get(dayIndex);
 
         if (getSupportActionBar() != null) getSupportActionBar().hide();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        createTimerChannel();
+        ensureTimerChannel();
 
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(BG);
@@ -101,12 +123,100 @@ public class WorkoutActivity extends AppCompatActivity {
 
         setContentView(frame);
         buildContent();
+        restoreWorkoutState();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        IntentFilter filter = new IntentFilter(TimerService.ACTION_DONE);
+        if (Build.VERSION.SDK_INT >= 33)
+            registerReceiver(timerDoneReceiver, filter, RECEIVER_NOT_EXPORTED);
+        else
+            registerReceiver(timerDoneReceiver, filter);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        try { unregisterReceiver(timerDoneReceiver); } catch (Exception ignored) {}
+        saveWorkoutState();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         if (ticker != null) handler.removeCallbacks(ticker);
+    }
+
+    // ---------------- state persistence ----------------
+
+    private void saveWorkoutState() {
+        try {
+            JSONObject state = new JSONObject();
+            state.put("prog", store.activeProgram());
+            state.put("day", dayIndex);
+            if (restEndTimeMs > System.currentTimeMillis())
+                state.put("rest_end", restEndTimeMs);
+            JSONArray exArr = new JSONArray();
+            for (ExState st : states) {
+                JSONArray setArr = new JSONArray();
+                for (SetRow sr : st.rows) {
+                    JSONObject s = new JSONObject();
+                    s.put("w", sr.w.getText().toString());
+                    s.put("r", sr.reps.getText().toString());
+                    s.put("done", sr.done);
+                    setArr.put(s);
+                }
+                exArr.put(setArr);
+            }
+            state.put("ex", exArr);
+            store.saveTempWorkout(state);
+        } catch (Exception ignored) {}
+    }
+
+    private void restoreWorkoutState() {
+        JSONObject state = store.getTempWorkout();
+        if (state == null) return;
+        try {
+            if (state.getInt("prog") != store.activeProgram()) return;
+            if (state.getInt("day") != dayIndex) return;
+
+            // Restore rest timer if still active
+            long endMs = state.optLong("rest_end", 0);
+            if (endMs > System.currentTimeMillis()) {
+                int sec = (int) ((endMs - System.currentTimeMillis()) / 1000);
+                restEndTimeMs = endMs;
+                remaining = sec;
+                total = sec;
+                paused = false;
+                restBar.setVisibility(View.VISIBLE);
+                paintRest();
+                startLocalTicker();
+                // Service should already be running; restart in case it was killed
+                startTimerService(sec);
+            }
+
+            // Restore set data
+            JSONArray exArr = state.getJSONArray("ex");
+            for (int i = 0; i < Math.min(exArr.length(), states.size()); i++) {
+                JSONArray setArr = exArr.getJSONArray(i);
+                ExState st = states.get(i);
+                while (st.rows.size() < setArr.length()) addSetRow(st);
+                for (int j = 0; j < Math.min(setArr.length(), st.rows.size()); j++) {
+                    JSONObject s = setArr.getJSONObject(j);
+                    SetRow sr = st.rows.get(j);
+                    sr.w.setText(s.optString("w", ""));
+                    sr.reps.setText(s.optString("r", ""));
+                    if (s.optBoolean("done", false) && !sr.done) {
+                        sr.done = true;
+                        sr.check.setBackground(round(GOOD, 10, GOOD, 1, this));
+                        sr.check.setTextColor(DARKTXT);
+                        sr.no.setBackground(ovalAccent());
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     // ---------------- build UI ----------------
@@ -187,8 +297,7 @@ public class WorkoutActivity extends AppCompatActivity {
 
         st.setsBox = col(this);
         card.addView(st.setsBox);
-        int n = ex.sets();
-        for (int i = 0; i < n; i++) addSetRow(st);
+        for (int i = 0; i < ex.sets(); i++) addSetRow(st);
 
         Button add = button(this, "+ série", false);
         add.setBackgroundColor(0x00000000);
@@ -221,15 +330,19 @@ public class WorkoutActivity extends AppCompatActivity {
         LinearLayout box = rowh(this);
         box.setPadding(0, dp(this, 6), 0, dp(this, 6));
 
-        TextView no = tv(this, String.valueOf(num), 11, MUTED, true);
-        no.setGravity(Gravity.CENTER);
         GradientDrawable nb = new GradientDrawable();
         nb.setShape(GradientDrawable.OVAL);
         nb.setColor(CARD2);
+
+        TextView no = tv(this, String.valueOf(num), 11, MUTED, true);
+        no.setGravity(Gravity.CENTER);
         no.setBackground(nb);
         LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(dp(this, 22), dp(this, 22));
         nlp.rightMargin = dp(this, 6);
         box.addView(no, nlp);
+
+        sr.no = no;
+        sr.noDefaultBg = nb;
 
         Button minus = smallBtn("−");
         final EditText w = numEdit("kg");
@@ -339,10 +452,7 @@ public class WorkoutActivity extends AppCompatActivity {
 
     private void updateInfo(ExState st) {
         double[] l = store.last(st.ex.name);
-        if (l == null) {
-            st.info.setText("Première fois sur cet exo");
-            return;
-        }
+        if (l == null) { st.info.setText("Première fois sur cet exo"); return; }
         double sug = Progression.suggest(l[0], l[1], st.ex.topReps());
         String s = "Dernière fois : " + Plates.trim(l[0]) + " kg × " + (int) l[1];
         if (sug > l[0]) s += "   →   essaie " + Plates.trim(sug) + " kg";
@@ -366,43 +476,50 @@ public class WorkoutActivity extends AppCompatActivity {
         r.addView(space());
 
         Button m = chip("−15");
-        m.setOnClickListener(v -> { remaining = Math.max(0, remaining - 15); paintRest(); });
+        m.setOnClickListener(v -> adjustRest(-15));
         Button pl = chip("+15");
-        pl.setOnClickListener(v -> { remaining += 15; total = Math.max(total, remaining); paintRest(); });
+        pl.setOnClickListener(v -> adjustRest(15));
         final Button pause = chip("⏸");
         pause.setOnClickListener(v -> { paused = !paused; pause.setText(paused ? "▶" : "⏸"); });
         Button skip = button(this, "Passer", true);
         skip.setOnClickListener(v -> stopRest());
 
-        r.addView(m);
-        r.addView(pl);
-        r.addView(pause);
-        r.addView(skip);
+        r.addView(m); r.addView(pl); r.addView(pause); r.addView(skip);
         bar.addView(r);
         return bar;
     }
 
+    private void adjustRest(int delta) {
+        remaining = Math.max(0, remaining + delta);
+        restEndTimeMs = System.currentTimeMillis() + remaining * 1000L;
+        total = Math.max(total, remaining);
+        paintRest();
+        // Update the service with new time
+        if (remaining > 0) startTimerService(remaining);
+    }
+
     private void startRest(int sec) {
-        total = sec;
+        if (ticker != null) handler.removeCallbacks(ticker);
         remaining = sec;
+        total = sec;
         paused = false;
+        restEndTimeMs = System.currentTimeMillis() + sec * 1000L;
         restBar.setVisibility(View.VISIBLE);
         paintRest();
+        startTimerService(sec);
+        startLocalTicker();
+    }
+
+    private void startLocalTicker() {
         if (ticker != null) handler.removeCallbacks(ticker);
         ticker = new Runnable() {
-            @Override
-            public void run() {
-                if (!paused) {
+            @Override public void run() {
+                if (!paused && remaining > 0) {
                     remaining--;
                     paintRest();
-                    if (remaining <= 0) {
-                        beep();
-                        notifyRestDone();
-                        handler.postDelayed(() -> restBar.setVisibility(View.GONE), 1500);
-                        return;
-                    }
                 }
-                handler.postDelayed(this, 1000);
+                if (remaining > 0) handler.postDelayed(this, 1000);
+                // When remaining reaches 0, the service broadcasts ACTION_DONE which we handle
             }
         };
         handler.postDelayed(ticker, 1000);
@@ -411,6 +528,21 @@ public class WorkoutActivity extends AppCompatActivity {
     private void stopRest() {
         if (ticker != null) handler.removeCallbacks(ticker);
         restBar.setVisibility(View.GONE);
+        restEndTimeMs = 0;
+        stopTimerService();
+    }
+
+    private void startTimerService(int sec) {
+        Intent i = new Intent(this, TimerService.class);
+        i.setAction(TimerService.ACTION_START);
+        i.putExtra(TimerService.EXTRA_SECONDS, sec);
+        startService(i);
+    }
+
+    private void stopTimerService() {
+        Intent i = new Intent(this, TimerService.class);
+        i.setAction(TimerService.ACTION_STOP);
+        startService(i);
     }
 
     private void paintRest() {
@@ -437,27 +569,12 @@ public class WorkoutActivity extends AppCompatActivity {
         } catch (Exception ignored) {}
     }
 
-    private void createTimerChannel() {
+    private void ensureTimerChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel ch = new NotificationChannel(
                 TIMER_CHANNEL, "Fin de repos", NotificationManager.IMPORTANCE_HIGH);
             ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(ch);
         }
-    }
-
-    private void notifyRestDone() {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
-        try {
-            NotificationCompat.Builder nb = new NotificationCompat.Builder(this, TIMER_CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle("IronLog")
-                .setContentText("Repos terminé — c'est reparti !")
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setAutoCancel(true);
-            NotificationManagerCompat.from(this).notify(42, nb.build());
-        } catch (Exception ignored) {}
     }
 
     // ---------------- dialogs ----------------
@@ -468,10 +585,7 @@ public class WorkoutActivity extends AppCompatActivity {
         for (String s : ws) sb.append("•  ").append(s).append("\n");
         String msg = sb.length() == 0 ? "Renseigne d'abord une charge de travail." : sb.toString().trim();
         new AlertDialog.Builder(this)
-                .setTitle("Échauffement — " + ex.name)
-                .setMessage(msg)
-                .setPositiveButton("OK", null)
-                .show();
+            .setTitle("Échauffement — " + ex.name).setMessage(msg).setPositiveButton("OK", null).show();
     }
 
     private void platesDialog(double pre) {
@@ -488,10 +602,8 @@ public class WorkoutActivity extends AppCompatActivity {
         in.addTextChangedListener(new SimpleWatcher(calc));
         calc.run();
         new AlertDialog.Builder(this)
-                .setTitle("Plaques (barre " + Plates.trim(store.bar()) + " kg)")
-                .setView(box)
-                .setPositiveButton("OK", null)
-                .show();
+            .setTitle("Plaques (barre " + Plates.trim(store.bar()) + " kg)")
+            .setView(box).setPositiveButton("OK", null).show();
     }
 
     private void settingsDialog() {
@@ -508,17 +620,13 @@ public class WorkoutActivity extends AppCompatActivity {
         final EditText bar = numEdit("20");
         bar.setText(Plates.trim(store.bar()));
         box.addView(bar);
-        new AlertDialog.Builder(this)
-                .setTitle("Réglages")
-                .setView(box)
-                .setPositiveButton("Enregistrer", (d, w) -> {
-                    int r = (int) parse(rest.getText().toString());
-                    if (r > 0) store.setRestDefault(r);
-                    double bv = parse(bar.getText().toString());
-                    if (bv > 0) store.setBar(bv);
-                })
-                .setNegativeButton("Annuler", null)
-                .show();
+        new AlertDialog.Builder(this).setTitle("Réglages").setView(box)
+            .setPositiveButton("Enregistrer", (d, w) -> {
+                int r = (int) parse(rest.getText().toString());
+                if (r > 0) store.setRestDefault(r);
+                double bv = parse(bar.getText().toString());
+                if (bv > 0) store.setBar(bv);
+            }).setNegativeButton("Annuler", null).show();
     }
 
     // ---------------- finish ----------------
@@ -534,22 +642,22 @@ public class WorkoutActivity extends AppCompatActivity {
                         double rr = parse(sr.reps.getText().toString());
                         if (ww > 0 || rr > 0) {
                             JSONObject o = new JSONObject();
-                            o.put("w", ww);
-                            o.put("reps", rr);
+                            o.put("w", ww); o.put("reps", rr);
                             sets.put(o);
                         }
                     }
                 }
                 if (sets.length() > 0) {
                     JSONObject e = new JSONObject();
-                    e.put("name", st.ex.name);
-                    e.put("sets", sets);
+                    e.put("name", st.ex.name); e.put("sets", sets);
                     entries.put(e);
                 }
             }
         } catch (Exception ignored) {}
 
         if (entries.length() > 0) store.addSession(day.name, entries);
+        store.clearTempWorkout();
+        stopTimerService();
         Toast.makeText(this, "Séance enregistrée", Toast.LENGTH_SHORT).show();
         finish();
     }

@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
 
     <application
         android:allowBackup="true"
@@ -27,6 +29,11 @@
         <activity android:name=".ProgramsActivity" android:exported="false" />
         <activity android:name=".ProgramEditorActivity" android:exported="false" />
         <activity android:name=".DayEditorActivity" android:exported="false" />
+
+        <service
+            android:name=".TimerService"
+            android:exported="false"
+            android:foregroundServiceType="health" />
 
         <receiver
             android:name=".ReminderReceiver"

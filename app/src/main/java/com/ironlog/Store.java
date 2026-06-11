@@ -151,6 +151,22 @@ public class Store {
         } catch (Exception ignored) {}
     }
 
+    // --- temp workout state (survives process kill) ---
+
+    public void saveTempWorkout(org.json.JSONObject state) {
+        sp.edit().putString("temp_workout", state.toString()).apply();
+    }
+
+    public org.json.JSONObject getTempWorkout() {
+        String s = sp.getString("temp_workout", null);
+        if (s == null) return null;
+        try { return new org.json.JSONObject(s); } catch (Exception e) { return null; }
+    }
+
+    public void clearTempWorkout() {
+        sp.edit().remove("temp_workout").apply();
+    }
+
     // --- history ---
 
     public JSONArray getHistory() {
