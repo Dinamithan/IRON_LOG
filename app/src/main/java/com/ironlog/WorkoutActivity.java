@@ -1,5 +1,7 @@
 package com.ironlog;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
@@ -25,6 +27,8 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -36,6 +40,8 @@ import java.util.Locale;
 import static com.ironlog.Ui.*;
 
 public class WorkoutActivity extends AppCompatActivity {
+
+    private static final String TIMER_CHANNEL = "timer";
 
     private Store store;
     private Models.Day day;
@@ -67,11 +73,13 @@ public class WorkoutActivity extends AppCompatActivity {
         super.onCreate(b);
         store = new Store(this);
         int di = getIntent().getIntExtra("day", 0);
-        di = Math.max(0, Math.min(di, Models.PROGRAM.size() - 1));
-        day = Models.PROGRAM.get(di);
+        Models.Program prog = Models.PROGRAMS.get(store.activeProgram());
+        di = Math.max(0, Math.min(di, prog.days.size() - 1));
+        day = prog.days.get(di);
 
         if (getSupportActionBar() != null) getSupportActionBar().hide();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        createTimerChannel();
 
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(BG);
@@ -388,6 +396,7 @@ public class WorkoutActivity extends AppCompatActivity {
                     paintRest();
                     if (remaining <= 0) {
                         beep();
+                        notifyRestDone();
                         handler.postDelayed(() -> restBar.setVisibility(View.GONE), 1500);
                         return;
                     }
@@ -424,6 +433,29 @@ public class WorkoutActivity extends AppCompatActivity {
                 else
                     vb.vibrate(400);
             }
+        } catch (Exception ignored) {}
+    }
+
+    private void createTimerChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel(
+                TIMER_CHANNEL, "Fin de repos", NotificationManager.IMPORTANCE_HIGH);
+            ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(ch);
+        }
+    }
+
+    private void notifyRestDone() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        try {
+            NotificationCompat.Builder nb = new NotificationCompat.Builder(this, TIMER_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle("IronLog")
+                .setContentText("Repos terminé — c'est reparti !")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true);
+            NotificationManagerCompat.from(this).notify(42, nb.build());
         } catch (Exception ignored) {}
     }
 
@@ -481,8 +513,8 @@ public class WorkoutActivity extends AppCompatActivity {
                 .setPositiveButton("Enregistrer", (d, w) -> {
                     int r = (int) parse(rest.getText().toString());
                     if (r > 0) store.setRestDefault(r);
-                    double b = parse(bar.getText().toString());
-                    if (b > 0) store.setBar(b);
+                    double bv = parse(bar.getText().toString());
+                    if (bv > 0) store.setBar(bv);
                 })
                 .setNegativeButton("Annuler", null)
                 .show();
