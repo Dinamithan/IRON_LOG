@@ -73,7 +73,8 @@ public class WorkoutActivity extends AppCompatActivity {
         super.onCreate(b);
         store = new Store(this);
         int di = getIntent().getIntExtra("day", 0);
-        Models.Program prog = Models.PROGRAMS.get(store.activeProgram());
+        java.util.List<Models.Program> progs = store.getPrograms();
+        Models.Program prog = progs.get(Math.min(store.activeProgram(), progs.size() - 1));
         di = Math.max(0, Math.min(di, prog.days.size() - 1));
         day = prog.days.get(di);
 

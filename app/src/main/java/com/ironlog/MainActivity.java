@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -73,14 +74,16 @@ public class MainActivity extends AppCompatActivity {
         root.addView(sub);
 
         // Active program row
-        int progIdx = store.activeProgram();
-        Models.Program prog = Models.PROGRAMS.get(progIdx);
+        List<Models.Program> progs = store.getPrograms();
+        int progIdx = Math.min(store.activeProgram(), progs.size() - 1);
+        Models.Program prog = progs.get(progIdx);
+
         LinearLayout progRow = rowh(this);
         TextView progName = tv(this, prog.name, 13, TEXT, true);
         progRow.addView(progName, new LinearLayout.LayoutParams(0, WRAP, 1f));
-        Button changeProg = button(this, "Changer", false);
-        changeProg.setOnClickListener(v -> programDialog());
-        progRow.addView(changeProg);
+        Button manageBtn = button(this, "Gérer", false);
+        manageBtn.setOnClickListener(v -> startActivity(new Intent(this, ProgramsActivity.class)));
+        progRow.addView(manageBtn);
         LinearLayout.LayoutParams prlp = lp(MATCH, WRAP);
         prlp.bottomMargin = dp(this, 12);
         root.addView(progRow, prlp);
@@ -119,37 +122,12 @@ public class MainActivity extends AppCompatActivity {
             clp.bottomMargin = dp(this, 11);
             root.addView(card, clp);
         }
-    }
 
-    // ---------------- program dialog ----------------
-
-    private void programDialog() {
-        String[] names = new String[Models.PROGRAMS.size()];
-        for (int i = 0; i < Models.PROGRAMS.size(); i++) names[i] = Models.PROGRAMS.get(i).name;
-        int cur = store.activeProgram();
-        final int[] sel = {cur};
-
-        new AlertDialog.Builder(this)
-            .setTitle("Programme")
-            .setSingleChoiceItems(names, cur, (d, which) -> sel[0] = which)
-            .setPositiveButton("Choisir", (d, w) -> {
-                if (sel[0] == cur) return;
-                new AlertDialog.Builder(this)
-                    .setTitle("Changer de programme ?")
-                    .setMessage("Veux-tu réinitialiser ta progression (charges par exercice) ?")
-                    .setPositiveButton("Oui, réinitialiser", (d2, w2) -> {
-                        store.setActiveProgram(sel[0]);
-                        store.resetProgress();
-                        build();
-                    })
-                    .setNegativeButton("Non, garder", (d2, w2) -> {
-                        store.setActiveProgram(sel[0]);
-                        build();
-                    })
-                    .show();
-            })
-            .setNegativeButton("Annuler", null)
-            .show();
+        if (prog.days.isEmpty()) {
+            TextView empty = tv(this, "Ce programme n'a pas encore de séances.\nAppuie sur Gérer pour en ajouter.", 14, MUTED, false);
+            empty.setPadding(0, dp(this, 20), 0, 0);
+            root.addView(empty);
+        }
     }
 
     // ---------------- reminder dialog ----------------
@@ -162,7 +140,6 @@ public class MainActivity extends AppCompatActivity {
         int p = dp(this, 16);
         box.setPadding(p, p, p, p);
 
-        // Toggle row
         LinearLayout enableRow = rowh(this);
         enableRow.addView(tv(this, "Rappels actifs", 14, TEXT, false),
             new LinearLayout.LayoutParams(0, WRAP, 1f));
@@ -178,7 +155,6 @@ public class MainActivity extends AppCompatActivity {
         erlp.bottomMargin = dp(this, 14);
         box.addView(enableRow, erlp);
 
-        // Day selector
         TextView daysLabel = tv(this, "Jours", 13, MUTED, true);
         daysLabel.setPadding(0, 0, 0, dp(this, 8));
         box.addView(daysLabel);
@@ -209,7 +185,6 @@ public class MainActivity extends AppCompatActivity {
         drlp.bottomMargin = dp(this, 14);
         box.addView(dayRow, drlp);
 
-        // Time
         TextView timeLabel = tv(this, "Heure du rappel", 13, MUTED, true);
         timeLabel.setPadding(0, 0, 0, dp(this, 8));
         box.addView(timeLabel);
@@ -234,9 +209,7 @@ public class MainActivity extends AppCompatActivity {
                 store.setReminderHour(Math.max(0, Math.min(23, h)));
                 store.setReminderMinute(Math.max(0, Math.min(59, m)));
                 ReminderReceiver.scheduleAll(this);
-                Toast.makeText(this,
-                    enabled[0] ? "Rappels activés" : "Rappels désactivés",
-                    Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, enabled[0] ? "Rappels activés" : "Rappels désactivés", Toast.LENGTH_SHORT).show();
             })
             .setNegativeButton("Annuler", null)
             .show();

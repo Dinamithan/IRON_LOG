@@ -1,7 +1,6 @@
 package com.ironlog;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 public class Models {
@@ -40,18 +39,19 @@ public class Models {
     }
 
     public static class Program {
-        public final String name;
+        public String name;
         public final List<Day> days;
         public Program(String n, Day... d) {
             name = n;
-            days = new ArrayList<>(Arrays.asList(d));
+            days = new ArrayList<>();
+            for (Day day : d) days.add(day);
         }
     }
 
-    public static final List<Program> PROGRAMS = new ArrayList<>();
+    static List<Program> defaultPrograms() {
+        List<Program> list = new ArrayList<>();
 
-    static {
-        PROGRAMS.add(new Program("PPL — 6 jours",
+        list.add(new Program("PPL — 6 jours",
             new Day("Lundi — Push",
                 new Ex("Développé couché", "4×6-8", "45"),
                 new Ex("Développé Militaire (haltères)", "3×8-10", "16"),
@@ -95,7 +95,7 @@ public class Models {
                 new Ex("Pompes (Finisher)", "Max", ""))
         ));
 
-        PROGRAMS.add(new Program("Fullbody — 3 jours",
+        list.add(new Program("Fullbody — 3 jours",
             new Day("Séance A — Force",
                 new Ex("Squat", "4×5-6", "60"),
                 new Ex("Développé couché", "4×5-6", "60"),
@@ -115,5 +115,7 @@ public class Models {
                 new Ex("Mollets à la Presse", "4×12-15", "60"),
                 new Ex("Face Pull", "3×15-20", "20"))
         ));
+
+        return list;
     }
 }

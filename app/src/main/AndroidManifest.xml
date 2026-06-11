@@ -24,6 +24,9 @@
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name=".WorkoutActivity" android:exported="false" />
         <activity android:name=".HistoryActivity" android:exported="false" />
+        <activity android:name=".ProgramsActivity" android:exported="false" />
+        <activity android:name=".ProgramEditorActivity" android:exported="false" />
+        <activity android:name=".DayEditorActivity" android:exported="false" />
 
         <receiver
             android:name=".ReminderReceiver"

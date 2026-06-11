@@ -7,6 +7,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public class Store {
@@ -16,7 +17,80 @@ public class Store {
         sp = c.getApplicationContext().getSharedPreferences("ironlog", Context.MODE_PRIVATE);
     }
 
+    // --- programs ---
+
+    public List<Models.Program> getPrograms() {
+        String raw = sp.getString("programs", null);
+        if (raw == null) {
+            List<Models.Program> defs = Models.defaultPrograms();
+            savePrograms(defs);
+            return defs;
+        }
+        try {
+            JSONArray arr = new JSONArray(raw);
+            java.util.List<Models.Program> out = new java.util.ArrayList<>();
+            for (int i = 0; i < arr.length(); i++) out.add(parseProgram(arr.getJSONObject(i)));
+            return out.isEmpty() ? Models.defaultPrograms() : out;
+        } catch (Exception e) { return Models.defaultPrograms(); }
+    }
+
+    public void savePrograms(List<Models.Program> programs) {
+        try {
+            JSONArray arr = new JSONArray();
+            for (Models.Program p : programs) arr.put(toJson(p));
+            sp.edit().putString("programs", arr.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    private Models.Program parseProgram(JSONObject o) throws Exception {
+        Models.Program p = new Models.Program(o.getString("name"));
+        JSONArray days = o.getJSONArray("days");
+        for (int i = 0; i < days.length(); i++) p.days.add(parseDay(days.getJSONObject(i)));
+        return p;
+    }
+
+    private Models.Day parseDay(JSONObject o) throws Exception {
+        Models.Day d = new Models.Day(o.getString("name"));
+        JSONArray exes = o.getJSONArray("exercises");
+        for (int i = 0; i < exes.length(); i++) {
+            JSONObject e = exes.getJSONObject(i);
+            d.ex.add(new Models.Ex(e.getString("name"), e.getString("scheme"), e.optString("planned", "")));
+        }
+        return d;
+    }
+
+    private JSONObject toJson(Models.Program p) throws Exception {
+        JSONObject o = new JSONObject();
+        o.put("name", p.name);
+        JSONArray days = new JSONArray();
+        for (Models.Day d : p.days) days.put(toJson(d));
+        o.put("days", days);
+        return o;
+    }
+
+    private JSONObject toJson(Models.Day d) throws Exception {
+        JSONObject o = new JSONObject();
+        o.put("name", d.name);
+        JSONArray exes = new JSONArray();
+        for (Models.Ex e : d.ex) {
+            JSONObject eo = new JSONObject();
+            eo.put("name", e.name);
+            eo.put("scheme", e.scheme);
+            eo.put("planned", e.planned);
+            exes.put(eo);
+        }
+        o.put("exercises", exes);
+        return o;
+    }
+
+    // --- active program ---
+
+    public int activeProgram() { return sp.getInt("program", 0); }
+    public void setActiveProgram(int p) { sp.edit().putInt("program", p).apply(); }
+    public void resetProgress() { sp.edit().remove("last").apply(); }
+
     // --- settings ---
+
     public int restDefault() { return sp.getInt("rest", 120); }
     public void setRestDefault(int s) { sp.edit().putInt("rest", s).apply(); }
 
@@ -27,14 +101,8 @@ public class Store {
         sp.edit().putLong("bar", Double.doubleToLongBits(b)).apply();
     }
 
-    // --- active program ---
-    public int activeProgram() {
-        return Math.min(sp.getInt("program", 0), Models.PROGRAMS.size() - 1);
-    }
-    public void setActiveProgram(int p) { sp.edit().putInt("program", p).apply(); }
-    public void resetProgress() { sp.edit().remove("last").apply(); }
-
     // --- reminders ---
+
     public boolean remindersEnabled() { return sp.getBoolean("reminders_on", false); }
     public void setRemindersEnabled(boolean v) { sp.edit().putBoolean("reminders_on", v).apply(); }
 
@@ -60,6 +128,7 @@ public class Store {
     public void setReminderMinute(int m) { sp.edit().putInt("reminder_m", m).apply(); }
 
     // --- last performance per exercise: returns {weight, reps} or null ---
+
     public double[] last(String name) {
         try {
             JSONObject o = new JSONObject(sp.getString("last", "{}"));
@@ -83,6 +152,7 @@ public class Store {
     }
 
     // --- history ---
+
     public JSONArray getHistory() {
         try { return new JSONArray(sp.getString("history", "[]")); }
         catch (Exception e) { return new JSONArray(); }
