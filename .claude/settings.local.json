@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Skill(run)",
-      "Skill(run:*)"
+      "Skill(run:*)",
+      "PowerShell(cd \"C:\\\\Users\\\\tristan.lembert\\\\Downloads\\\\IronLog\\\\IronLog\"; $env:JAVA_HOME=\"C:\\\\Program Files\\\\Android\\\\Android Studio\\\\jbr\"; $env:ANDROID_HOME=\"$env:LOCALAPPDATA\\\\Android\\\\Sdk\"; & \"C:\\\\Users\\\\tristan.lembert\\\\.gradle\\\\wrapper\\\\dists\\\\gradle-8.13-bin\\\\5xuhj0ry160q40clulazy9h7d\\\\gradle-8.13\\\\bin\\\\gradle.bat\" assembleDebug --no-daemon -q 2>&1 | Select-Object -Last 10)"
     ]
   }
 }

@@ -536,7 +536,11 @@ public class WorkoutActivity extends AppCompatActivity {
         Intent i = new Intent(this, TimerService.class);
         i.setAction(TimerService.ACTION_START);
         i.putExtra(TimerService.EXTRA_SECONDS, sec);
-        startService(i);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(i);
+        } else {
+            startService(i);
+        }
     }
 
     private void stopTimerService() {

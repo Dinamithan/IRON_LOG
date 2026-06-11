@@ -39,7 +39,12 @@ public class TimerService extends Service {
         endTimeMs = System.currentTimeMillis() + seconds * 1000L;
 
         ensureChannels();
-        startForeground(NOTIF_ID, buildRestNotif(endTimeMs));
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIF_ID, buildRestNotif(endTimeMs),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIF_ID, buildRestNotif(endTimeMs));
+        }
 
         if (endTask != null) handler.removeCallbacks(endTask);
         endTask = () -> {
