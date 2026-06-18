@@ -87,6 +87,7 @@ public class TimerService extends Service {
             .setChronometerCountDown(true)
             .setShowWhen(true)
             .setOngoing(true)
+            .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(openPi)

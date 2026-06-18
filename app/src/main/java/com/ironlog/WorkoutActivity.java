@@ -55,8 +55,7 @@ public class WorkoutActivity extends AppCompatActivity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable ticker;
-    private int remaining, total;
-    private boolean paused;
+    private int remaining;
     private long restEndTimeMs = 0;
 
     private final List<ExState> states = new ArrayList<>();
@@ -188,8 +187,6 @@ public class WorkoutActivity extends AppCompatActivity {
                 int sec = (int) ((endMs - System.currentTimeMillis()) / 1000);
                 restEndTimeMs = endMs;
                 remaining = sec;
-                total = sec;
-                paused = false;
                 restBar.setVisibility(View.VISIBLE);
                 paintRest();
                 startLocalTicker();
@@ -475,34 +472,17 @@ public class WorkoutActivity extends AppCompatActivity {
         r.addView(left);
         r.addView(space());
 
-        Button m = chip("−15");
-        m.setOnClickListener(v -> adjustRest(-15));
-        Button pl = chip("+15");
-        pl.setOnClickListener(v -> adjustRest(15));
-        final Button pause = chip("⏸");
-        pause.setOnClickListener(v -> { paused = !paused; pause.setText(paused ? "▶" : "⏸"); });
         Button skip = button(this, "Passer", true);
         skip.setOnClickListener(v -> stopRest());
 
-        r.addView(m); r.addView(pl); r.addView(pause); r.addView(skip);
+        r.addView(skip);
         bar.addView(r);
         return bar;
-    }
-
-    private void adjustRest(int delta) {
-        remaining = Math.max(0, remaining + delta);
-        restEndTimeMs = System.currentTimeMillis() + remaining * 1000L;
-        total = Math.max(total, remaining);
-        paintRest();
-        // Update the service with new time
-        if (remaining > 0) startTimerService(remaining);
     }
 
     private void startRest(int sec) {
         if (ticker != null) handler.removeCallbacks(ticker);
         remaining = sec;
-        total = sec;
-        paused = false;
         restEndTimeMs = System.currentTimeMillis() + sec * 1000L;
         restBar.setVisibility(View.VISIBLE);
         paintRest();
@@ -514,7 +494,7 @@ public class WorkoutActivity extends AppCompatActivity {
         if (ticker != null) handler.removeCallbacks(ticker);
         ticker = new Runnable() {
             @Override public void run() {
-                if (!paused && remaining > 0) {
+                if (remaining > 0) {
                     remaining--;
                     paintRest();
                 }
